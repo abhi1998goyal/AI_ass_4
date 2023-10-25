@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include<bits/stdc++.h>
 #include <random>
-
+#include<chrono>
 // Format checker just assumes you have Alarm.bif and Solved_Alarm.bif (your file) in current directory
 using namespace std;
 
@@ -20,8 +20,8 @@ private:
 	vector<string> Parents; // Parents of a particular node- note these are names of parents
 	int nvalues;  // Number of categories a variable represented by this node can take
 	vector<string> values; // Categories of possible values
-	vector<float> CPT; // conditional probability table as a 1-d array . Look for BIF format to understand its meaning
-	map<string,float> cpt_map;
+	vector<double> CPT; // conditional probability table as a 1-d array . Look for BIF format to understand its meaning
+	map<string,double> cpt_map;
 	vector<string> cpt_order;
 
 public:
@@ -36,7 +36,7 @@ public:
 
 	}
 
-void set_cpt_map(vector<float> cpt , vector<string> cpt_comb)
+void set_cpt_map(vector<double> cpt , vector<string> cpt_comb)
 {
 		for(int i =0;i<cpt.size();i++){
 			this->cpt_map[cpt_comb[i]]=cpt[i];
@@ -52,7 +52,7 @@ vector<string> get_cpt_order(){
      return cpt_order;
 }
 
-map<string,float> get_cpt_map()
+map<string,double> get_cpt_map()
 {
     return cpt_map;
 }
@@ -70,7 +70,7 @@ map<string,float> get_cpt_map()
 	{
 		return Parents;
 	}
-	vector<float> get_CPT()
+	vector<double> get_CPT()
 	{
 		return CPT;
 	}
@@ -82,7 +82,7 @@ map<string,float> get_cpt_map()
 	{
 		return values;
 	}
-	void set_CPT(vector<float> new_CPT)
+	void set_CPT(vector<double> new_CPT)
 	{
 		CPT.clear();
 		CPT=new_CPT;
@@ -250,7 +250,7 @@ network read_network()
                     
      				ss2>> temp;
                     
-     				vector<float> curr_CPT;
+     				vector<double> curr_CPT;
                     string::size_type sz;
      				while(temp.compare(";")!=0)
      				{
@@ -307,8 +307,8 @@ vector<vector<string>> read_data_file(string filename){
     return raw_data;
 }
 
-float find_prob(vector<string> row,network Alarm){
-    float prob =1.0;
+double find_prob(vector<string> row,network Alarm){
+    double prob =1.0;
     for(int i =0;i<row.size();i++){
         Graph_Node node = (*Alarm.get_nth_node(i));
 		vector<string> parents= node.get_Parents();
@@ -332,20 +332,57 @@ float find_prob(vector<string> row,network Alarm){
    return  prob;
 }
 
-vector<float> normalize(vector<float> prob){
-	  float sum =0;
-      for(int i=0;i<prob.size();i++){
-        sum+=prob[i];
-	  }
-	  for(int i=0;i<prob.size();i++){
-        prob[i]=prob[i]/sum;
-	  }
-   return prob;
+vector<double> normalize(vector<double> prob) {
+    double sum = 0;
+    int numProbabilities = prob.size();
+
+    // Calculate the sum of probabilities
+    for (int i = 0; i < numProbabilities; i++) {
+        sum += prob[i];
+    }
+
+    // Check if the sum is close to zero (within a small epsilon)
+    if (sum < 1e-6) {
+        // All probabilities were zero, redistribute them equally
+        for (int i = 0; i < numProbabilities; i++) {
+            prob[i] = 1.0 / numProbabilities;
+        }
+    } else {
+        // Normalize the probabilities
+        for (int i = 0; i < numProbabilities; i++) {
+            prob[i] = prob[i] / sum;
+        }
+
+        bool overflow = false;
+        double totalExcess = 0.0;
+
+        // Check for and handle overflow
+        for (int i = 0; i < numProbabilities; i++) {
+            if (prob[i] > 0.9999) {
+                overflow = true;
+                totalExcess += prob[i] - 0.9999;
+                prob[i] = 0.9999;
+            }
+        }
+
+        if (overflow) {
+            // Redistribute the excess probability equally among all probabilities
+            double redistribution = totalExcess / (numProbabilities - 1);
+            for (int i = 0; i < numProbabilities; i++) {
+                if (prob[i] < 0.9999) {
+                    prob[i] += redistribution;
+                }
+            }
+        }
+    }
+
+    return prob;
 }
 
-pair<vector<vector<string>> ,vector<float>> calc_cpt_raw(vector<vector<string>> raw_data,network Alarm){
+
+pair<vector<vector<string>> ,vector<double>> calc_cpt_raw(vector<vector<string>> raw_data,network Alarm){
 	vector<vector<string>> cpt1;
-	vector<float> cpt1_prob;
+	vector<double> cpt1_prob;
     vector<int> missing_indx;
     for (vector<string> row : raw_data){
 		int indx=0;
@@ -358,9 +395,9 @@ pair<vector<vector<string>> ,vector<float>> calc_cpt_raw(vector<vector<string>> 
 	}
 
 	for (int row=0 ;row<raw_data.size();row++){
-		cout<<row<<"\n";
+		//cout<<row<<"\n";
 		int no_attr_missing_node = (*Alarm.get_nth_node(missing_indx[row])).get_nvalues();
-		vector<float> prob(no_attr_missing_node,0);
+		vector<double> prob(no_attr_missing_node,0);
 		for(int i=0;i<no_attr_missing_node;i++){
               vector<string> new_row=raw_data[row];
 			  new_row[missing_indx[row]]=(*Alarm.get_nth_node(missing_indx[row])).get_values()[i];
@@ -388,9 +425,9 @@ string row_constrct(vector<string> row,vector<int> tree_indx){
 	 return cons;
 }
 
-map<string,float> normalize_cpt_map(map<string,float> cpt_map, Graph_Node node){
+map<string,double> normalize_cpt_map(map<string,double> cpt_map, Graph_Node node){
 	   for (const auto& entry : cpt_map) 
-        {    vector<float> to_normalize;
+        {    vector<double> to_normalize;
 			 size_t pos = entry.first.find("_");
 			 string cond="";
 			 if (pos != string::npos) {
@@ -410,12 +447,12 @@ map<string,float> normalize_cpt_map(map<string,float> cpt_map, Graph_Node node){
 		return cpt_map;
 }
 
-void assign_cpt(pair<vector<vector<string>>,vector<float>> cpt_table_prob,network& Alarm){
+void assign_cpt(pair<vector<vector<string>>,vector<double>> cpt_table_prob,network& Alarm){
 	vector<vector<string>> cpt_table = cpt_table_prob.first;
-	vector<float> cpt_prob=cpt_table_prob.second;
+	vector<double> cpt_prob=cpt_table_prob.second;
     for(int i =0;i<Alarm.netSize();i++){
         Graph_Node node = *(Alarm.get_nth_node(i));
-		map<string,float> cpt_map=node.get_cpt_map();
+		map<string,double> cpt_map=node.get_cpt_map();
 		for (auto& entry : cpt_map) {
              entry.second = 0.0;
            }
@@ -429,7 +466,7 @@ void assign_cpt(pair<vector<vector<string>>,vector<float>> cpt_table_prob,networ
 		  cpt_map[row_constrct(cpt_table[k],tree_indx)]+=cpt_prob[k];
 	  }
 	  vector<string> ne_cpt_val;
-	  vector<float> ne_cpt_prob;
+	  vector<double> ne_cpt_prob;
 	  for(auto entry : normalize_cpt_map(cpt_map,node)){
             ne_cpt_val.push_back(entry.first);
 			ne_cpt_prob.push_back(entry.second);
@@ -438,8 +475,8 @@ void assign_cpt(pair<vector<vector<string>>,vector<float>> cpt_table_prob,networ
 	}
 }
 
-vector<float> calc_new_cpt(vector<vector<string>> data,network Alarm){
-	vector<float> prob;
+vector<double> calc_new_cpt(vector<vector<string>> data,network Alarm){
+	vector<double> prob;
     for(int i =0;i<data.size();i++){
 		
 			prob.push_back(find_prob(data[i],Alarm));
@@ -501,16 +538,17 @@ int main()
 {
 	network Alarm;
 	Alarm=read_network();
+	auto start_time = std::chrono::high_resolution_clock::now();
 	std::random_device rd;
     std::mt19937 gen(rd());
     for(int i=0;i<Alarm.netSize();i++){
 		Graph_Node node = *(Alarm.get_nth_node(i));
-		vector<float> node_cpt(node.get_CPT().size(),0);
+		vector<double> node_cpt(node.get_CPT().size(),0);
 		for(int j=0;j<node.get_CPT().size()/node.get_nvalues();j++){
-			float start=0.0;
+			double start=0.0;
             for(int k=0;k<node.get_nvalues()-1;k++){
-				std::uniform_real_distribution<float> dis(start, 0.9999);
-                float random_number = dis(gen);
+				std::uniform_real_distribution<double> dis(start, 1);
+                double random_number = dis(gen);
                 node_cpt[j+k*(node.get_CPT().size()/node.get_nvalues())]=random_number-start;
 				start=random_number;
 			}
@@ -557,19 +595,26 @@ int main()
 	}
   //  
    vector<vector<string>> raw_data = read_data_file("records.dat");
-   pair<vector<vector<string>>,vector<float>> cpt_table_1=calc_cpt_raw(raw_data,Alarm);
+   pair<vector<vector<string>>,vector<double>> cpt_table_1=calc_cpt_raw(raw_data,Alarm);
 
   
    // for(vector<string> row : raw_data){
 
 	//}
+	int num_iterations = 0;
     vector<vector<string>> cpt_rows_curr=cpt_table_1.first;
-	vector<float> cpt_prob_curr=cpt_table_1.second;
-	for (int i=0;i<10;i++){
+	vector<double> cpt_prob_curr=cpt_table_1.second;
+	while(true){
+		auto current_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed_time = current_time - start_time;
+		if(elapsed_time.count()>120){
+			break;
+		}
 		assign_cpt(make_pair(cpt_rows_curr,cpt_prob_curr),Alarm);
 		cpt_prob_curr=calc_cpt_raw(raw_data,Alarm).second;
+		num_iterations++;
 	}
-
+   cout<<"ran for iterations : "<<num_iterations;
    writeOutput("solved_alarm.bif","alarm.bif",Alarm);
  return 0;
 }

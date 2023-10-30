@@ -21,11 +21,10 @@ private:
 	int nvalues;  // Number of categories a variable represented by this node can take
 	vector<string> values; // Categories of possible values
 	vector<double> CPT; // conditional probability table as a 1-d array . Look for BIF format to understand its meaning
+	unordered_map<string,double> cpt_map;
 	vector<string> cpt_order;
-	vector<int> indx;
 
 public:
-    unordered_map<string,double> cpt_map;
 	// Constructor- a node is initialised with its name and its categories
     Graph_Node(string name,int n,vector<string> vals)
 	{
@@ -33,7 +32,8 @@ public:
 	
 		nvalues=n;
 		values=vals;
-	
+		
+
 	}
 
 void set_cpt_map(vector<double> cpt , vector<string> cpt_comb)
@@ -42,15 +42,6 @@ void set_cpt_map(vector<double> cpt , vector<string> cpt_comb)
 			this->cpt_map[cpt_comb[i]]=cpt[i];
 		}
 }
-
-void set_indx(vector<int> indx){
-     this->indx=indx;
-}
-
-vector<int> get_indx(){
-     return this->indx;
-}
-
 
 void set_cpt_order(vector<string> cpt_order){
      this->cpt_order=cpt_order;
@@ -264,7 +255,7 @@ network read_network()
      				while(temp.compare(";")!=0)
      				{
                         
-     					curr_CPT.push_back(1);
+     					curr_CPT.push_back(atof(temp.c_str()));
      					
      					ss2>>temp;
                        
@@ -351,7 +342,7 @@ vector<double> normalize(vector<double> prob) {
     }
 
     // Check if the sum is close to zero (within a small epsilon)
-    if (sum < 1e-6) {
+    if (sum ==0) {
         // All probabilities were zero, redistribute them equally
         for (int i = 0; i < numProbabilities; i++) {
             prob[i] = 1.0 / numProbabilities;
@@ -523,10 +514,10 @@ void writeOutput(string out_file,string in_file,network Alarm){
 					int i=0;
                     while(i < node.get_CPT().size())
                     {
-                        if(node.get_cpt_map()[node.get_cpt_order()[i]]<0.01)
-                            out << "0.01" << " ";
+                        if(node.get_cpt_map()[node.get_cpt_order()[i]]<0.0001)
+                            out << "0.0001" << " ";
                         else
-                            out << fixed << setprecision(2) << node.get_cpt_map()[node.get_cpt_order()[i]] << " ";
+                            out << fixed << setprecision(4) << node.get_cpt_map()[node.get_cpt_order()[i]] << " ";
                         i++;
                     }
                     out << ";" << endl;
@@ -552,16 +543,25 @@ int main()
     std::mt19937 gen(rd());
     for(int i=0;i<Alarm.netSize();i++){
 		Graph_Node node = *(Alarm.get_nth_node(i));
-		vector<double> node_cpt(node.get_CPT().size(),1.0);
+		vector<double> node_cpt(node.get_CPT().size(),0);
+		for(int j=0;j<node.get_CPT().size()/node.get_nvalues();j++){
+			double start=0.0;
+            for(int k=0;k<node.get_nvalues()-1;k++){
+				std::uniform_real_distribution<double> dis(start, 0.9999999);
+                double random_number = dis(gen);
+                //node_cpt[j+k*(node.get_CPT().size()/node.get_nvalues())]=random_number-start;
+				node_cpt[j+k*(node.get_CPT().size()/node.get_nvalues())]=random_number-start;
+				start=random_number+0.0000001;
+			}
+			node_cpt[j+(node.get_nvalues()-1)*(node.get_CPT().size()/node.get_nvalues())]=1-start;
+		}
+		(*(Alarm.get_nth_node(i))).set_CPT(node_cpt);
 
 		vector<string> rel_str;
 	    rel_str.push_back("");
 		stack<string> parent_stack;
-		vector<int> index;
-		index.push_back(i);
         for(string parent :node.get_Parents()){
 				parent_stack.push(parent);
-				index.push_back(Alarm.get_index(parent));
 		}
         while(!parent_stack.empty()){
 		string parent = parent_stack.top();
@@ -589,46 +589,13 @@ int main()
 				finl_rel_str.push_back(st);
 			 }
 		}
-        
-		(*(Alarm.get_nth_node(i))).set_indx(index);
+
 		(*(Alarm.get_nth_node(i))).set_cpt_order(finl_rel_str);
 
 		(*(Alarm.get_nth_node(i))).set_cpt_map(node_cpt,finl_rel_str);
 	}
   //  
    vector<vector<string>> raw_data = read_data_file("records.dat");
-   for(int i=0;i<raw_data.size();i++){
-	   vector<string> row=raw_data[i];
-       for(int j=0;j<Alarm.netSize();j++){
-		   Graph_Node nd = (*Alarm.get_nth_node(j));
-		   vector<int> inx=nd.get_indx();
-		   string cond_string ="";
-		   for(int ind:inx){
-               cond_string+=row[ind]+"_";
-		   }
-		    if(cond_string[cond_string.size()-1]=='_'){
-	           cond_string=cond_string.substr(0,cond_string.size()-1);
-	             }
-			if(cond_string.find('?') != std::string::npos){
-
-			}
-			else{
-			(*Alarm.get_nth_node(j)).cpt_map[cond_string]=(*Alarm.get_nth_node(j)).cpt_map[cond_string]+1.0;
-			}
-	   }
-   }
-    
-	for(int p=0;p<Alarm.netSize();p++){
-	  Graph_Node nde= (*Alarm.get_nth_node(p));
-      vector<string> ne_cpt_val;
-	  vector<double> ne_cpt_prob;
-	  for(auto entry : normalize_cpt_map(nde.get_cpt_map(),nde)){
-            ne_cpt_val.push_back(entry.first);
-			ne_cpt_prob.push_back(entry.second);
-	  }
-	  (*(Alarm.get_nth_node(p))).set_cpt_map(ne_cpt_prob, ne_cpt_val);
-	}
-
    pair<vector<vector<string>>,vector<double>> cpt_table_1=calc_cpt_raw(raw_data,Alarm);
 
   
@@ -653,8 +620,4 @@ int main()
    writeOutput("solved_alarm.bif","alarm.bif",Alarm);
  return 0;
 }
-
-
-
-
 
